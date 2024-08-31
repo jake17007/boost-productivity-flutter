@@ -1,0 +1,571 @@
+# 01: Section Intro
+
+Covered in this section:
+
+Adding Firebase to the eCommerce app (with FlutterFire CLI)
+Creating an AuthRepository using the FirebaseAuth APIs
+The authStateChanges() method and the User class
+Testing the authentication flows with Firebase
+Dealing with Firebase auth exceptions
+Adding the email verification logic
+Automated testing with FirebaseAuth and wrap up
+
+# 02: Adding Firebase to the eCommerce app
+
+In this lesson we add Firebase to our eCommerce app.
+
+To make life easier, I’ve provided this updated code snapshot:
+
+git reset --hard HEAD
+git checkout starter-project-macos
+Once you checked out the latest code, follow these steps to add Firebase to the project:
+
+Head over to https://console.firebase.google.com
+Create a new Firebase project called flutter-firebase-masterclass
+On the project console, add a Flutter app and follow the instructions
+Run flutterfire configure --project=flutter-firebase-masterclass
+Select android, ios, macos, web as the target platforms
+When prompted for the Android application id, enter: com.example.ecommerce_app
+This will generate lib/firebase_options.dart and other platform-specific configuration files
+Add firebase_core and firebase_auth as dependencies
+Initialize the Firebase app inside main.dart
+Once you followed the steps above, the following code should compile in main.dart:
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  // turn off the # in the URLs on the web
+  usePathUrlStrategy();
+  // create an app bootstrap instance
+  final appBootstrap = AppBootstrap();
+  // create a container configured with all the "fake" repositories
+  final container = await createFirebaseProviderContainer();
+  // use the container above to create the root widget
+  final root = appBootstrap.createRootWidget(container: container);
+  // start the app
+  runApp(root);
+}
+If we run the app, everything should work correctly.
+
+Though note that when adding Firebase to a Flutter app, some errors are quite common. 👇
+
+Fixing Multidex error on Android
+If the app fails with a Multidex error when running on Android, the easiest way to fix it is to set the minSdkVersion to 21 or above in android/app/build.gradle:
+
+android {
+    defaultConfig {
+        ...
+        minSdkVersion 21
+    }
+    ...
+}
+Source: Enable multidex for apps with over 64K methods
+
+In addition to this, the com.google.gms:google-services dependency should be updated from version 4.3.0 to 4.3.14 inside android/build.gradle:
+
+dependencies {
+  classpath 'com.android.tools.build:gradle:8.0.1'
+  // START: FlutterFire Configuration
+  // https://stackoverflow.com/a/74521510/436422
+  classpath 'com.google.gms:google-services:4.3.14'
+  // END: FlutterFire Configuration
+  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+}
+Cocoapods is not installed
+If you get this error when running on iOS or macOS, make sure cocoapods is installed:
+
+sudo gem install cocoapods
+Alternatively, install with brew on macOS
+
+brew install cocoapods
+More info here:
+
+Updating to latest version of CocoaPods?
+Note that if you’re using Xcode 15, you need Cocoapods 1.13.0 or above:
+
+Xcode 15 DT_TOOLCHAIN_DIR issue
+iOS: A Firebase App named [DEFAULT] already exists
+This error can happen for a variety of reasons.
+
+A very common one is if you have more than one Firebase project using the same iOS bundle ID, and it can be resolved by specifying the Firebase project name explicitly:
+
+await Firebase.initializeApp(
+  name: 'flutter-firebase-masterclass',
+  options: DefaultFirebaseOptions.currentPlatform,
+)
+More info here:
+
+Unhandled Exception: [core/duplicate-app] A Firebase App named “[DEFAULT]” already exists
+Note about Firebase configuration files in `.gitignore`
+The following files have been added to .gitignore in the code snapshot above:
+
+lib/firebase_options.dart
+ios/Runner/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+macos/Runner/GoogleService-Info.plist
+macos/firebase_app_id_file.json
+android/app/google-services.json
+This is so you don’t end up with file conflicts when you checkout my code again in the future.
+
+Running on macOS
+The updated source code already includes all the changes explained in this article:
+
+Flutter & Firebase Auth on macOS: Resolving Common Issues
+But you’ll still need to open Xcode and select your own development team under “Signing & Capabilities” if you want to run on macOS.
+
+Other issues may also occurr. To learn more, check the FAQs in the documentation repo:
+
+Flutter & Firebase Masterclass - Documentation
+Resources
+Enable multidex for apps with over 64K methods
+Flutter Flavors Setup with multiple Firebase Environments using FlutterFire and Very Good CLI
+Flutter & Firebase Auth on macOS: Resolving Common Issues
+Xcode 15 DT_TOOLCHAIN_DIR issue
+
+# 03: Creating an AuthRepository using the FirebaseAuth APIs
+
+Up until now, the AuthRepository class was implemented like this:
+
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+ 
+part 'auth_repository.g.dart';
+ 
+// TODO: Implement with Firebase
+abstract class AuthRepository {
+  Future<void> signInWithEmailAndPassword(String email, String password);
+  Future<void> createUserWithEmailAndPassword(String email, String password);
+  Future<void> signOut();
+  Stream<AppUser?> authStateChanges();
+  AppUser? get currentUser;
+}
+ 
+@Riverpod(keepAlive: true)
+AuthRepository authRepository(AuthRepositoryRef ref) {
+  // TODO: create and return repository
+  throw UnimplementedError();
+}
+Since we’ve added the firebase_auth package, we can now implement it like this:
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+ 
+part 'auth_repository.g.dart';
+ 
+class AuthRepository {
+  AuthRepository(this._auth);
+  final FirebaseAuth _auth;
+ 
+  Future<void> signInWithEmailAndPassword(String email, String password) {
+    return _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+ 
+  Future<void> createUserWithEmailAndPassword(String email, String password) {
+    return _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+ 
+  Future<void> signOut() {
+    return _auth.signOut();
+  }
+ 
+  Stream<AppUser?> authStateChanges() {
+    // A value of type 'Stream<User?>' can't be returned from the method 'authStateChanges' because it has a return type of 'Stream<AppUser?>'
+    return _auth.authStateChanges();
+  }
+ 
+  // A value of type 'User?' can't be returned from the function 'currentUser' because it has a return type of 'AppUser?'
+  AppUser? get currentUser => _auth.currentUser;
+}
+ 
+@Riverpod(keepAlive: true)
+AuthRepository authRepository(AuthRepositoryRef ref) {
+  return AuthRepository(FirebaseAuth.instance);
+}
+This way, the AuthRepository acts as a wrapper that hides away any Firebase-specific implementation details.
+
+But we still have some errors, because authStateChanges() and currentUser return values of type User?, while our class returns values of type AppUser? (which is defined in the domain layer).
+
+We’ll fix this in the next lesson.
+
+# 04: The authStateChanges() method and the User class
+The difference between currentUser and authStateChanges() is that:
+
+currentUser is useful when we want to do a one-time read and check if the user is currently signed in.
+authStateChanges is useful when we want to react to changes in the user state and rebuild our UI
+Completing the AuthRepository class
+If we don’t want to “leak” the User type outside the AuthRepository class, we can convert it to an AppUser using a helper function:
+
+class AuthRepository {
+  AuthRepository(this._auth);
+  final FirebaseAuth _auth;
+ 
+  ...
+ 
+  Stream<AppUser?> authStateChanges() {
+    return _auth.authStateChanges().map(_convertUser);
+  }
+ 
+  AppUser? get currentUser => _convertUser(_auth.currentUser);
+ 
+  AppUser? _convertUser(User? user) => user != null
+      ? AppUser(
+          uid: user.uid,
+          email: user.email,
+          emailVerified: user.emailVerified,
+        )
+      : null;
+}
+Resources
+Users in Firebase Projects
+User class
+currentUser property
+authStateChanges method
+How to use Abstraction and the Repository Pattern Effectively in your Flutter apps
+
+# 05: Testing the authentication flows with Firebase
+With the latest changes, the AuthRepository is no longer an abstract class and the corresponding provider no longer throw an error:
+
+@Riverpod(keepAlive: true)
+AuthRepository authRepository(AuthRepositoryRef ref) {
+  return AuthRepository(FirebaseAuth.instance);
+}
+As a result, we no longer need to override the authRepositoryProvider when starting the app:
+
+Future<ProviderContainer> createFirebaseProviderContainer(
+    {bool addDelay = true}) async {
+  
+  // Removed:
+  // final authRepository = FakeAuthRepository(addDelay: addDelay);
+  final productsRepository = FakeProductsRepository(addDelay: addDelay);
+  ...
+ 
+  return ProviderContainer(
+    overrides: [
+      // Removed:
+      // authRepositoryProvider.overrideWithValue(authRepository),
+      productsRepositoryProvider.overrideWithValue(productsRepository),
+      ...
+    ],
+    observers: [AsyncErrorLogger()],
+  );
+}
+Testing the app
+With the change above, we can test the app and register a new email and password.
+
+And if we sign in with a non-existent account, we’ll see an alert with this error as expected:
+
+[firebase_auth/user-not-found] There is no user record corresponding to this identifier. The user may have been deleted.
+
+
+# 06 Dealing with Firebase auth exceptions
+Most methods in the FirebaseAuth class can throw exceptions.
+
+Example:
+
+class FirebaseAuth {
+  ...
+  /// Attempts to sign in a user with the given email address and password.
+  ///
+  /// If successful, it also signs the user in into the app and updates
+  /// any [authStateChanges], [idTokenChanges] or [userChanges] stream
+  /// listeners.
+  ///
+  /// **Important**: You must enable Email & Password accounts in the Auth
+  /// section of the Firebase console before being able to use them.
+  ///
+  /// A [FirebaseAuthException] maybe thrown with the following error code:
+  /// - **invalid-email**:
+  ///  - Thrown if the email address is not valid.
+  /// - **user-disabled**:
+  ///  - Thrown if the user corresponding to the given email has been disabled.
+  /// - **user-not-found**:
+  ///  - Thrown if there is no user corresponding to the given email.
+  /// - **wrong-password**:
+  ///  - Thrown if the password is invalid for the given email, or the account
+  ///    corresponding to the email does not have a password set.
+  Future<UserCredential> signInWithEmailAndPassword({
+    required String email,
+    required String password,
+  })
+}
+But at the moment, we’re not catching them in the AuthRepository:
+
+class AuthRepository {
+  AuthRepository(this._auth);
+  final FirebaseAuth _auth;
+ 
+  Future<void> signInWithEmailAndPassword(String email, String password) {
+    // * Note: no try/catch here
+    return _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+}
+As a result, exceptions propagate through the call stack until they encounter a try/catch block.
+
+And as it turns out, they are captured by a call to the AsyncValue.guard method, which is implemented like this inside the Riverpod package:
+
+abstract class AsyncValue<T> {
+  static Future<AsyncValue<T>> guard<T>(Future<T> Function() future) async {
+    try {
+      return AsyncValue.data(await future());
+    } catch (err, stack) {
+      return AsyncValue.error(err, stack);
+    }
+  }
+}
+The resulting AsyncValue.error is then assigned to the state inside the EmailPasswordSignInController:
+
+class EmailPasswordSignInController extends _$EmailPasswordSignInController {
+  @override
+  FutureOr<void> build() {
+    // nothing to do
+  }
+  Future<bool> submit(
+      {required String email,
+      required String password,
+      required EmailPasswordSignInFormType formType}) async {
+    state = const AsyncValue.loading();
+    state =
+        await AsyncValue.guard(() => _authenticate(email, password, formType));
+    return state.hasError == false;
+  }
+}
+And in turn, we listen to state changes in the _EmailPasswordSignInContentsState class:
+
+Widget build(BuildContext context) {
+  ref.listen<AsyncValue>(
+    emailPasswordSignInControllerProvider,
+    (_, state) => state.showAlertDialogOnError(context),
+  );
+  ...
+}
+Finally, the showAlertDialogOnError shows an alert to the user if the state has an error:
+
+/// A helper [AsyncValue] extension to show an alert dialog on error
+extension AsyncValueUI on AsyncValue {
+  /// show an alert dialog if the current [AsyncValue] has an error and the
+  /// state is not loading.
+  void showAlertDialogOnError(BuildContext context) {
+    if (!isLoading && hasError) {
+      final message = _errorMessage(error);
+      showExceptionAlertDialog(
+        context: context,
+        title: 'Error'.hardcoded,
+        exception: message,
+      );
+    }
+  }
+ 
+  String _errorMessage(Object? error) {
+    if (error is AppException) {
+      return error.details.message;
+    } else {
+      return error.toString();
+    }
+  }
+}
+By default FirebaseAuthException will show both the error code and message.
+
+To prevent that and show the message only, we can tweak the _errorMessage method:
+
+String _errorMessage(Object? error) {
+  if (error is FirebaseAuthException) {
+    return error.message ?? error.toString();
+  } else if (error is AppException) {
+    return error.details.message;
+  } else {
+    return error.toString();
+  }
+}
+This approach is very lightweight and works just fine for this project, since Firebase already has some useful error types.
+
+But if you want to be 100% sure to catch all exceptions coming from the data source, you can consider a functional error handling approach, which I have described in the articles below.
+
+Though note that this takes more work since you have to deal with error types explicitly across layers (repositories, services, controllers).
+
+Resources
+Flutter Exception Handling with try/catch and the Result type
+Functional Error Handling with Either and fpdart in Flutter: An Introduction
+
+# 07: Adding the email verification logic
+Key facts about email verification:
+
+when we use email and password sign in, we can’t guarantee the email address exists, unless we verify it (this is not a concern when we use OAuth providers like Google, Apple, Facebook etc.)
+to address this, we can provide an option inside our app to verify the user email (this is normally done in the account/profile page)
+we can call the sendEmailVerification method of the User class to start the verification process
+an email with will be sent to the user’s email address:
+Example email verification link
+By clicking on the link, the email will be verified and the user will be taken to this page:
+
+Email verified page
+Once this is done, the user can return to the app.
+
+Note that according to this StackOverflow thread, the ID token needs to be refreshed before the emailVerified property is set to true:
+
+FirebaseUser isEmailVerified is always returning false even after verifying email
+In practice, this only seems to work by signing out and signing back in.
+
+Getting the latest code
+The updated source code with the email verification feature is available by running this command:
+
+git checkout email-verification
+If you have working changes, you may want to discard them first:
+
+git reset --hard HEAD
+Overview of the changes
+A new FirebaseAuthUser class has been added:
+
+class FirebaseAppUser implements AppUser {
+  const FirebaseAppUser(this._user);
+  final User _user;
+ 
+  @override
+  UserID get uid => _user.uid;
+ 
+  @override
+  String? get email => _user.email;
+ 
+  @override
+  bool get emailVerified => _user.emailVerified;
+ 
+  // * Note: after calling this method, [emailVerified] isn't updated until the
+  // * next time an ID token is generated for the user.
+  // * Read this for more info: https://stackoverflow.com/a/63258198/436422
+  @override
+  Future<void> sendEmailVerification() => _user.sendEmailVerification();
+}
+This makes it possible to hide the User class (and its dependency to firebase_auth.dart) as an implementation detail.
+
+As a result, methods in the AuthRepository only expose the AppUser class in their public interface:
+
+class AuthRepository {
+  AuthRepository(this._auth);
+  final FirebaseAuth _auth;
+ 
+  ...
+ 
+  Stream<AppUser?> authStateChanges() {
+    return _auth.authStateChanges().map(_convertUser);
+  }
+ 
+  AppUser? get currentUser => _convertUser(_auth.currentUser);
+ 
+  /// Helper method to convert a [User] to an [AppUser]
+  AppUser? _convertUser(User? user) =>
+      user != null ? FirebaseAppUser(user) : null;
+}
+Then, in the EmailVerificationWidget (inside the account screen), we use this code to enable email verification:
+
+OutlinedButton(
+  onPressed: state.isLoading
+      ? null
+      : () async {
+          final success = await ref
+              .read(accountScreenControllerProvider.notifier)
+              .sendEmailVerification(user);
+          if (success && context.mounted) {
+            showAlertDialog(
+              context: context,
+              title: 'Sent - now check your email'.hardcoded,
+            );
+          }
+        },
+  child: Text(
+    'Verify email'.hardcoded,
+    style: Theme.of(context).textTheme.titleLarge,
+  ),
+)
+Here’s the updated AccountScreenController:
+
+@riverpod
+class AccountScreenController extends _$AccountScreenController {
+  @override
+  FutureOr<void> build() {
+    // nothing to do
+  }
+  Future<void> signOut() async {
+    final authRepository = ref.read(authRepositoryProvider);
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() => authRepository.signOut());
+  }
+ 
+  Future<bool> sendEmailVerification(AppUser user) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() => user.sendEmailVerification());
+    return state.hasError == false;
+  }
+}
+Resources
+Email Verification in Firebase Auth | Firebase blog
+Related:
+
+Authenticate with Firebase Using Email Links
+Use a custom domain for Authentication emails
+
+# 08: Automated testing with FirebaseAuth and wrap up
+We’ve now completed the authentication feature in the eCommerce app.
+
+And to get the latest code, run this:
+
+git reset --hard HEAD
+git checkout email-verification
+Here’s a conceptual diagram of how everything fits together in the email & password sign-in flow:
+
+Layers and classes in the authentication feature (email & password flow)
+For reference, here’s the equivalent architecture for the account screen widget:
+
+Layers and classes in the authentication feature (account screen)
+Was it worth it?
+Implementing all the UI and logic by hand gives us more control, but is a lot of work.
+
+Instead, things are much easier if we use the Firebase UI Auth package:
+
+Layers and classes when using Firebase UI
+Bottom line: if you want to get things done quickly, use Firebase UI.
+
+And to get a better idea of how much code you can delete by using Firebase UI, see this PR in my time tracker repo:
+
+Replace authentication screens with Firebase UI
+Note about automated testing
+Firebase UI Auth gives us a SignInScreen class for showing a fully styled sign-in flow.
+
+To make testing easier, the SignInScreen constructor takes an optional FirebaseAuth argument that we can mock in our tests.
+
+For more info, see these instructions in the Firebase UI docs:
+
+Writing widget unit tests | Firebase UI Auth docs
+Resources
+The Firebase Authentication page in the docs lists all the additional capabilities of the FirebaseAuth SDK:
+
+Email and password based authentication
+Federated identity provider integration (Google, Apple, …)
+Phone number authentication
+Custom auth system integration
+Anonymous auth
+In addition, you can upgrade to Firebase Authentication with Identity Platform to unlock extra features:
+
+Multi-factor authentication
+Blocking functions
+SAML and OpenID Connect providers
+User activity and audit logging
+Multi-tenancy
+Enterprise support and SLA
+Automatic clean-up of anonymous users
+However, these are advanced features that are beyond the scope of this course.
+
+Additional Resources
+Flutter Firebase Phone Auth with Riverpod (GitHub example app)
+Codelabs
+Get to know Firebase for Flutter
+Add a user authentication flow to a Flutter app using FirebaseUI
+
+

@@ -1,7 +1,7 @@
 {
-  "appTitle": "My Shop",
+  "appTitle": "Jake\'s Data",
   "previewNotice": "This is a preview of the final app that you'll build in the course. More features will be added before the course is complete.",
-  "appBarTitle": "My Shop",
+  "appBarTitle": "Jake\'s Data",
   "@appBarTitle": {
     "description": "The title to be shown in the menu bar"
   },
